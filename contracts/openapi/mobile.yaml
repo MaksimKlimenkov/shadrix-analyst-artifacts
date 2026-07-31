@@ -1,0 +1,1261 @@
+openapi: 3.1.0
+
+info:
+  title: Mobile Shadrix API
+  version: 1.0.2
+  description: |
+    Native Mobile BFF для мобильных приложений Shadrix.
+
+    ## Формат ошибок
+    Все ошибки возвращаются в формате `application/problem+json` согласно RFC 9457.
+
+    ## HATEOAS
+    Каждый ответ содержит `availableActions` — список действий доступных в текущем состоянии.
+    Клиент не конструирует URL самостоятельно — использует `path` из `availableActions`.
+    `id` действия известен клиенту заранее.
+
+    ## Сценарное именование
+    - `/v1/auth/*` — вход через внешнего провайдера
+    - `/v1/enrollment/*` — привязка устройства к аккаунту
+    - `/v1/reauth/*` — повторный вход на зарегистрированном устройстве
+
+    ## Заголовки трассировки
+    - `X-Session-ID` — сквозной идентификатор сессии
+    - `X-App-Version` — версия приложения
+    - `X-Platform` — платформа клиента (`ios` | `android`)
+    - `X-Idempotency-Key` — ключ идемпотентности для мутирующих операций
+
+    ## DeviceProof
+    Для запросов с access token, выпущенным для mobile-устройства, клиент обязан передавать:
+    - `DPoP` — JWT proof для конкретного HTTP-запроса
+    - `X-Http-Method` — метод исходного запроса
+    - `X-Http-Uri` — абсолютный URI исходного запроса
+
+    При ошибке `proof_invalid` клиент должен один раз полностью пересобрать новый proof
+    для того же запроса и повторить отправку. Старый proof переиспользовать нельзя.
+
+servers:
+  - url: https://mobile.shadrix.dev
+    description: Локальное окружение
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен доступа
+
+  parameters:
+    SessionIdHeader:
+      name: X-Session-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+    AppVersionHeader:
+      name: X-App-Version
+      in: header
+      required: true
+      schema:
+        type: string
+        example: "1.0.0"
+    PlatformHeader:
+      name: X-Platform
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: [ ios, android ]
+        example: ios
+    IdempotencyKeyHeader:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: b7e2c1a0-3f4d-4e8b-9c5a-1d2e3f4a5b6c
+    RefreshTokenHeader:
+      name: X-Refresh-Token
+      in: header
+      required: false
+      schema:
+        type: string
+        example: a2w7brS1AiSSUHRRhTGGuLFP_4VLA7ijhYbmDcgvhiA
+    DeviceProofHeader:
+      name: DPoP
+      in: header
+      required: false
+      schema:
+        type: string
+        description: JWT proof для запросов с mobile access token.
+        example: eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2In0.eyJodHUiOiJodHRwczovL21vYmlsZS5zaGFkcml4LmRldi92MS9wcm9maWxlIiwiaHRtIjoiR0VUIiwiYXRoIjoiLi4uIiwiaWF0IjoxNzE4NjM0NzAwLCJqdGkiOiI3OGZiNTIxNy02OGYxLTRlMzctYWRmMS0xYmIwYWZmZjQwZDIiLCJjaWQiOiIxNDY5NmI4Mi05ZDQ4LTQ4N2EtYmM0Zi00Y2ZmMGVmYjg0ZjkifQ.signature
+    DeviceProofMethodHeader:
+      name: X-Http-Method
+      in: header
+      required: false
+      schema:
+        type: string
+        example: GET
+    DeviceProofUriHeader:
+      name: X-Http-Uri
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uri
+        example: https://mobile.shadrix.dev/v1/profile
+
+  schemas:
+
+    AvailableAction:
+      type: object
+      description: |
+        Доступное действие в текущем состоянии сценария.
+      required: [ id, type ]
+      properties:
+        id:
+          type: string
+          example: enrollment:update-profile
+        type:
+          type: string
+          enum: [ request, redirect ]
+        requestPath:
+          type: string
+          description: Только при type=request
+          example: /v1/enrollment/profile
+        requestMethod:
+          type: string
+          description: Только при type=request
+          enum: [ GET, POST, PUT, PATCH, DELETE ]
+          example: POST
+        redirectUrl:
+          type: string
+          description: Только при type=redirect. Может быть либо прямой in-app (tg://), либо обычный url (https://)
+          example: tg://resolve?domain=bot?start=<start>
+        fallbackUrl:
+          type: string
+          description: Только при type=redirect. Только url (https://)
+          example: https://t.me/<bot>?start=<start>
+
+    ProfileData:
+      type: object
+      description: |
+        Персональные данные, доступные для заполнения и обновления пользователем.
+      properties:
+        firstName:
+          type: string
+          description: |
+            Обязательно. После trim и нормализации должно содержать от 2 до 50 символов.
+            Допустимы только буквы и одиночный дефис между частями имени.
+          minLength: 2
+          maxLength: 50
+          pattern: '^(?!.*--)(?!-)[\p{L}]+(?:-[\p{L}]+)*$'
+          example: Иван
+        lastName:
+          type: string
+          description: |
+            Обязательно. После trim и нормализации должно содержать от 2 до 50 символов.
+            Допустимы только буквы и одиночный дефис между частями фамилии.
+          minLength: 2
+          maxLength: 50
+          pattern: '^(?!.*--)(?!-)[\p{L}]+(?:-[\p{L}]+)*$'
+          example: Иванов
+        middleName:
+          type: string
+          description: |
+            Опционально. Если передано, после trim и нормализации должно содержать от 2 до 50 символов.
+            Допустимы только буквы и одиночный дефис между частями отчества.
+          minLength: 2
+          maxLength: 50
+          pattern: '^(?!.*--)(?!-)[\p{L}]+(?:-[\p{L}]+)*$'
+          example: Иванович
+        dateOfBirth:
+          type: string
+          format: date
+          description: |
+            Обязательно. Дата рождения не может быть в будущем.
+            Возраст на момент проверки должен быть меньше 120 лет.
+          example: "1990-05-15"
+
+    PhoneNumber:
+      type: string
+      description: |
+        Номер телефона пользователя в международном формате.
+      pattern: '^\+[1-9]\d{1,14}$'
+      example: "+79123456789"
+
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: eyJhbGciOiJFUzI1NiJ9...
+        expiresIn:
+          description: Время истечения accessToken (в секундах)
+          type: number
+          example: 300
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: lastName
+        code:
+          type: string
+          example: urn:shadrix:error:validation:field-required
+        detail:
+          type: string
+          example: Поле обязательно для заполнения
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          description: URN типа ошибки
+          example: urn:shadrix:error:validation-failed
+        title:
+          type: string
+          example: Не удалось выполнить проверку
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Запрос содержит недопустимые поля
+        traceId:
+          type: string
+          example: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+        errors:
+          type: array
+          description: Присутствует только при `urn:shadrix:error:validation-failed`
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+  responses:
+
+    BadRequest:
+      description: Ошибка валидации запроса
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:validation-failed
+            title: Не удалось обработать запрос
+            status: 400
+            errors:
+              - field: lastName
+                detail: Поле обязательно для заполнения
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+    Unauthorized:
+      description: Токен отсутствует, недействителен, истёк или device proof отклонён
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:unauthorized
+            title: Не авторизован
+            status: 401
+            detail: proof_invalid
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+    
+    ProofInvalid:
+      description: DPoP токен не действителен
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:proof_invalid"
+            title: Произошла ошибка, попробуйте ещё раз
+            status: 401
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+    Forbidden:
+      description: Отказано в доступе
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:forbidden
+            title: Действие недоступно
+            status: 403
+            detail: Отказано в доступе.
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+    
+    NotFound:
+      description: Запрашиваемый ресурс не найден
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:not-found
+            title: Ресурс не найден
+            status: 404
+            detail: Запрашиваемый ресурс не существует.
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+    Conflict:
+      description: Конфликт состояния. URN в `type` определяет причину.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:auth:callback-invalid
+            title: Ошибка входа
+            status: 409
+            detail: Не удалось завершить вход. Попробуйте снова.
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+    TooManyRequests:
+      description: Превышен лимит запросов
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:too-many-requests
+            title: Слишком много запросов
+            status: 429
+            detail: Превышен лимит запросов.
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+    Internal:
+      description: Внутренняя ошибка сервера
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:shadrix:error:internal
+            title: Ошибка
+            status: 500
+            detail: Произошла внутренняя ошибка. Попробуйте позже.
+            traceId: 00-ca75f4e3214a3ddc7193c7fb0d033656-90ca70ff5f2e3673-00
+
+paths:
+
+  # ===========================================================================
+  # AUTH
+  # ===========================================================================
+
+  /v1/entrypoint:
+    get:
+      tags: [ Entrypoint ]
+      summary: Точка входа в приложение
+      description: |
+        Возвращает список методов входа доступных в данный момент.
+        В Authorization передается refresh токен в формате Bearer. Необязательный параметр.
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - $ref: '#/components/parameters/RefreshTokenHeader'
+      responses:
+        '200':
+          description: Список доступных методов входа
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - id: "auth:phone-number:telegram"
+                        type: "request"
+                        requestPath: "/v1/auth/phone-number/telegram"
+                      - id: "reauth:init-pin-login"
+                        type: "request"
+                        requestPath: "/v1/reauth/pin/init"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/auth/phone-number/{provider}:
+    post:
+      tags: [ Auth ]
+      summary: Инициировать вход по номеру телефона
+      description: |
+        Инициирует вход через провайдера номера телефона.
+        Клиент открывает браузер по `redirectUrl` и ожидает диплинк обратно.
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [ telegram ]
+            example: telegram
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                codeChallenge:
+                  type: string
+                  contentEncoding: base64url
+                  description: BASE64URL(SHA256(codeVerifier)). codeVerifier - 32 байта (CSPRNG - обязательно!)
+                  example: mSbCQnrL0tg7kZAYP3VQGRbMLn6qoC7bntRaLRraNwk
+                codeChallengeMethod:
+                  type: string
+                  enum: [ S256 ]
+                  example: S256
+      responses:
+        '200':
+          description: URL для перенаправления к провайдеру и действие после возврата в приложение
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expiresIn:
+                    type: number
+                    description: Время истечения в секундах
+                    example: 300
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - id: "auth:provider-redirect"
+                        type: "redirect"
+                        redirectUrl: "https://t.me/<bot>?start=<start>"
+                      - id: "auth:phone-number-callback"
+                        type: "request"
+                        requestPath: "/v1/auth/phone-number/callback"
+                        requestMethod: "POST"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/auth/phone-number/{provider}/callback:
+    post:
+      tags: [ Auth ]
+      summary: Обработать callback от провайдера номера телефона
+      description: |
+        Обрабатывает callback от провайдера после успешного входа.
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [ telegram ]
+            example: telegram
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: \"code\" который вернул провайдер
+                  example: HHz4farfCn40lpBMpGmEtXYtcY9c_srPABUbptW4hso
+                codeVerifier:
+                  type: string
+                  description: codeVerifier - 32байта, на базе которого сформирован codeChallenge
+                  example: ecYc8aVYZEV5p5iOY302TvPBtskxRoWXDw9TS7LdIjY
+      responses:
+        '200':
+          description: Вход завершён, личность установлена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  identityToken:
+                    type: string
+                    description: |
+                      Токен содержащий given_name, family_name, middle_name, birthdate, если они были установлены ранее.
+                      Если какое-то из полей (кроме middle_name) отсутствует необходимо отобразить форму заполнения профиля.
+                    example: eyJhbGciOiJFUzI1NiJ9...
+                  accessToken:
+                    type: string
+                    description: Токен с acr = enrollment
+                    example: eyJhbGciOiJFUzI1NiJ9...
+                  expiresIn:
+                    type: number
+                    description: Время в секундах до истечения токена
+                    example: 3600
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:create-device
+                        href: /v1/enrollment/device
+                        method: PUT
+                      - type: enrollment:update-profile
+                        href: /v1/enrollment/device
+                        method: PUT
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  # ===========================================================================
+  # ENROLLMENT
+  # ===========================================================================
+
+  /v1/enrollment/profile:
+    put:
+      tags: [ Enrollment ]
+      summary: Заполнить профиль
+      description: |
+        Идемпотентно создаёт или полностью заменяет персональные данные.
+        Возвращает `201` при первичном создании, `200` при повторном вызове.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileData'
+      responses:
+        '200':
+          description: Профиль обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ProfileData'
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:create-device
+                        href: /v1/enrollment/device
+                        method: PUT
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  /v1/enrollment/device:
+    put:
+      tags: [ Enrollment ]
+      summary: Создать устройство
+      description: Создаёт новое устройство в статусе `pending`.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceName:
+                  type: string
+                  description: Читаемое название устройства
+                  maxLength: 64
+                  example: iPhone 15 Pro
+                deviceVerifier:
+                  type: string
+                  contentEncoding: base64
+                  description: |
+                    Публичный ключ (secp256r1) сгенерированный аппаратным чипом, в формате SubjectPublicKeyInfo.
+                    Без BEGIN/END PUBLIC KEY
+                    https://emn178.github.io/online-tools/ecdsa/key-generator/?curve=secp256r1&key_type=pem_text&pem_format=PKCS8&cipher_algorithm=AES-256-CBC&passphrase_enabled=0
+                  example: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEASdj9fBPLVH7fI3ppqkQBvNWPMFkV9+2muUjqPQq9gan/Xn//3AsOBlWYmPz27adqOPcTUCoku7m3lHui+KEWw==
+                clientInstanceId:
+                  type: string
+                  format: uuid
+                  description: |
+                    Ключ установки приложения. Должен сохраняться между обновлениями, но должен меняться при переустановке
+                    Для iOS - Identifier for Vendors (IDFV)
+                    Для Android - Просто сгенерировать и сохранить в базу приложения
+                  example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+      responses:
+        '201':
+          description: Устройство создано в статусе pending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:init-pin-registration
+                        href: /v1/enrollment/credentials/pin/init
+                        method: POST
+
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/enrollment/pin/init:
+    post:
+      tags: [ Enrollment ]
+      summary: Инициировать регистрацию PIN
+      description: |
+        Первый шаг протокола OPAQUE для регистрации PIN.  
+        Просто передаем pin в CreateRegistrationRequest
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                registrationRequest:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE RegistrationRequest (base64)
+                  example: base64encodedRegistrationRequest...
+      responses:
+        '200':
+          description: OPAQUE RegistrationResponse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registrationResponse:
+                    type: string
+                    contentEncoding: base64
+                    description: OPAQUE RegistrationResponse (base64)
+                    example: base64encodedRegistrationResponse...
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:commit-pin
+                        href: /v1/enrollment/pin/commit
+                        method: POST
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/enrollment/pin/commit:
+    post:
+      tags: [ Enrollment ]
+      summary: Завершить регистрацию PIN
+      description: |
+        Второй шаг протокола OPAQUE для регистрации PIN.  
+        При вызове функции FinalizeRequest обязательно требуется передать:  
+        - Ids(userId=\<deviceSessionId\>, <br />serverId=<domain, eg. mobile.shadrix.dev>)  
+        
+        СОХРАНЯЕТ ВЕРИФИКАТОР ТОЛЬКО В КЭШ.  
+        СОХРАНЕНИЕ В БАЗУ ПРОИСХОДИТ ТОЛЬКО ПОСЛЕ ЗАВЕРШЕНИЯ ВЕРИФИКАЦИИ PIN.  
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                registrationRecord:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE RegistrationRecord (base64)
+                  example: base64encodedRegistrationRecord...
+      responses:
+        '200':
+          description: PIN успешно установлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:verify-pin
+                        href: /v1/enrollment/pin/verify
+                        method: POST
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  /v1/enrollment/pin/verify:
+    post:
+      tags: [ Enrollment ]
+      summary: Инициировать верификацию PIN
+      description: |
+        Первый шаг протокола OPAQUE для верификации PIN.  
+        Необходим для подтверждения, что мы можем войти с повторно введенным PIN.  
+        Поможет избежать ошибок "Мы сохранили в базе, а повторно зайти в приложение не можем"
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                credentialRequest:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE CredentialRequest (base64)
+                  example: base64encodedCredentialRequest...
+      responses:
+        '200':
+          description: OPAQUE RegistrationResponse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nonce:
+                    type: string
+                    contentEncoding: base64
+                    description: |
+                      Случайный nonce. Используется для формирования контекста
+                    example: UtEfBSM9I9RLc9UlBboCWLZVzsTYp7Px4nD2FuxZJSU=
+                  credentialResponse:
+                    type: string
+                    contentEncoding: base64
+                    description: OPAQUE CredentialResponse (base64)
+                    example: base64encodedRegistrationResponse...
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:confirm-pin
+                        href: /v1/enrollment/pin/confirm
+                        method: POST
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  /v1/enrollment/pin/confirm:
+    post:
+      tags: [ Enrollment ]
+      summary: Завершить верификацию PIN
+      description: |
+        Второй шаг протокола OPAQUE для верификации PIN.  
+        При вызове функции FinalizeRequest обязательно требуется передать:
+        - Ids(userId=\<clientInstanceId\>, <br />serverId=<domain, eg. mobile.shadrix.dev>)
+        - Context=BASE64(SHA256($"opaque-verify-v1:{nonce}:{clientInstanceId}"))
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pinAssertion:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE pin assertion из восстановленных OPAQUE credentials (base64)
+                  example: base64encodedPinAssertion...
+      responses:
+        '200':
+          description: PIN успешно установлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth:
+                    type: object
+                    properties:
+                      accessToken:
+                        type: string
+                        description: Токен с acr = enrollment
+                        example: eyJhbGciOiJFUzI1NiJ9...
+                      refreshToken:
+                        type: string
+                        description: Долгоживущий токен, применяемый при перевыпуске accessToken
+                        example: eyJhbGciOiJFUzI1NiJ9...
+                      expiresIn:
+                        type: number
+                        description: Время в секундах до истечения токена
+                        example: 3600
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: enrollment:activate-device
+                        href: /v1/enrollment/device/activate
+                        method: POST
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+
+  # ===========================================================================
+  # REAUTH
+  # ===========================================================================
+
+  /v1/reauth/pin/init:
+    post:
+      tags: [ Reauth ]
+      summary: Инициировать вход по PIN (OPAQUE шаг 1)
+      description: |
+        Первый шаг протокола OPAQUE для аутентификации по PIN.
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clientInstanceId:
+                  type: string
+                  format: uuid
+                  example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                credentialRequest:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE CredentialRequest (base64)
+                  example: base64encodedCredentialRequest...
+      responses:
+        '200':
+          description: OPAQUE CredentialResponse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nonce:
+                    type: string
+                    contentEncoding: base64
+                    description: |
+                      Случайный nonce. Используется для формирования контекста
+                    example: UtEfBSM9I9RLc9UlBboCWLZVzsTYp7Px4nD2FuxZJSU=
+                  credentialResponse:
+                    type: string
+                    contentEncoding: base64
+                    description: OPAQUE CredentialResponse (base64)
+                    example: base64encodedRegistrationResponse...
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: reauth:pin-login
+                        href: /v1/reauth/7c9e6679-7425-40de-944b-e07fc1f90ae7/pin
+                        method: POST
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/reauth/pin:
+    post:
+      tags: [ Reauth ]
+      summary: Завершить вход по PIN (OPAQUE шаг 2)
+      description: |
+        Второй шаг протокола OPAQUE для аутентификации по PIN.
+        При успехе возвращает токены доступа.
+        - Ids(userId=\<clientInstanceId\>, <br />serverId=<domain, eg. mobile.shadrix.dev>)
+        - Context=BASE64(SHA256($"opaque-verify-v1:{nonce}:{clientInstanceId}"))
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  example: a2w7brS1AiSSUHRRhTGGuLFP_4VLA7ijhYbmDcgvhiA
+                pinAssertion:
+                  type: string
+                  contentEncoding: base64
+                  description: OPAQUE pin assertion из восстановленных OPAQUE credentials (base64)
+                  example: base64encodedPinAssertion...
+      responses:
+        '200':
+          description: Вход по PIN завершён, токены выданы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth:
+                    $ref: '#/components/schemas/TokenResponse'
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: app.main
+                        href: /v1/app/main
+                        method: GET
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  # ===========================================================================
+  # ГЛАВНАЯ
+  # ===========================================================================
+  
+  /v1/app/main:
+    get:
+      tags: [ Главная ]
+      summary: Получить содержимое главного экрана
+      description: |
+        Возвращает данные, необходимые для отображения главного экрана приложения,
+        включая список доступных пропусков и последующих действий.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - $ref: '#/components/parameters/RefreshTokenHeader'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  passes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        organizationId:
+                          type: string
+                          format: uuid
+                          example: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        organizationName:
+                          type: string
+                          example: ООО «Шадрикс»
+                        status:
+                          type: enum
+                          enum: [ active, suspended ]
+                        issuedAt:
+                          type: string
+                          format: date
+                          example: "2026-03-17"
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: profile.view
+                        href: /v1/profile
+                        method: GET
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  # ===========================================================================
+  # ПРОФИЛЬ
+  # ===========================================================================
+  
+  /v1/profile:
+    get:
+      tags: [ Профиль ]
+      summary: Получить данные профиля
+      description: |
+        Возвращает персональные данные пользователя, доступные для отображения в разделе профиля.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/ProfileData'
+                  phoneNumber:
+                    $ref: '#/components/schemas/PhoneNumber'
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: app.main
+                        href: /v1/app/main
+                        method: GET
+                      - type: profile.update
+                        href: /v1/profile
+                        method: PUT
+                      - type: profile.logout
+                        href: /v1/profile/logout
+                        method: POST
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Internal'
+    put:
+      tags: [ Профиль ]
+      summary: Обновить данные профиля
+      description: |
+        Обновляет персональные данные пользователя, доступные для редактирования в мобильном приложении.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                profile:
+                  $ref: '#/components/schemas/ProfileData'
+      responses:
+        '200':
+          description: Успешно обновлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: profile.view
+                        href: /v1/profile
+                        method: GET
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Internal'
+  
+  /v1/profile/logout:
+    post:
+      tags: [ Профиль ]
+      summary: Завершить текущую сессию
+      description: |
+        Завершает текущую пользовательскую сессию и переводит приложение к повторной авторизации.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      responses:
+        '200':
+          description: Выход выполнен успешно, токены инвалидированы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableActions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableAction'
+                    example:
+                      - type: entrypoint
+                        href: /v1/entrypoint
+                        method: GET
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  # ===========================================================================
+  # ORGANIZATIONS
+  # ===========================================================================
+
+  /v1/org/invite:
+    get:
+      tags: [ Организации ]
+      summary: Получить preview приглашения в организацию
+      description: |
+        Возвращает краткую информацию о приглашении по токену, чтобы пользователь мог подтвердить вступление.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 22
+            maxLength: 22
+            example: AbCdEfGhIjKlMnOpQrStUv
+      responses:
+        '200':
+          description: Preview приглашения получен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ organizationId, organizationName ]
+                properties:
+                  organizationId:
+                    type: string
+                    format: uuid
+                    example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  organizationName:
+                    type: string
+                    example: ООО Ромашка
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /v1/org/invite/claim:
+    post:
+      tags: [ Организации ]
+      summary: Принять приглашение в организацию
+      description: |
+        Идемпотентно принимает приглашение в организацию для текущего пользователя.
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionIdHeader'
+        - $ref: '#/components/parameters/AppVersionHeader'
+        - $ref: '#/components/parameters/PlatformHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ token ]
+              properties:
+                token:
+                  type: string
+                  minLength: 22
+                  maxLength: 22
+                  example: AbCdEfGhIjKlMnOpQrStUv
+      responses:
+        '200':
+          description: Приглашение принято
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'

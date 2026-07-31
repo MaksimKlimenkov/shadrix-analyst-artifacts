@@ -1,0 +1,776 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+import "common.proto";
+
+option csharp_namespace = "AccessDirectory.Grpc";
+
+// ─── Organizations ──────────────────────────────────────────────────────────
+
+service OrganizationService {
+  rpc ListOrganizations (ListOrganizationsRequest) returns (ListOrganizationsResponse);
+  rpc GetOrganization (GetOrganizationRequest) returns (GetOrganizationResponse);
+  rpc CreateOrganization (CreateOrganizationRequest) returns (CreateOrganizationResponse);
+}
+
+message ListOrganizationsRequest {}
+
+message ListOrganizationsResponse {
+  repeated OrganizationSummary organizations = 1;
+}
+
+message OrganizationSummary {
+  string name = 1;
+  string slug = 2;
+  OrganizationLifecycleStatus status = 3;
+}
+
+message GetOrganizationRequest {
+  string slug = 1;
+}
+
+message GetOrganizationResponse {
+  Organization organization = 1;
+}
+
+message CreateOrganizationRequest {
+  string name = 1;
+  string slug = 2;
+}
+
+message CreateOrganizationResponse {
+  Organization organization = 1;
+}
+
+message Organization {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  OrganizationLifecycleStatus status = 4;
+}
+
+enum OrganizationLifecycleStatus {
+  ORGANIZATION_LIFECYCLE_STATUS_UNSPECIFIED = 0;
+  ORGANIZATION_LIFECYCLE_STATUS_ACTIVE = 1;
+  ORGANIZATION_LIFECYCLE_STATUS_ARCHIVED = 2;
+}
+
+// ─── Access subjects ────────────────────────────────────────────────────────
+
+service AccessSubjectService {
+  rpc CreateAccessSubject (CreateAccessSubjectRequest) returns (CreateAccessSubjectResponse);
+  rpc ListAccessSubjects (ListAccessSubjectsRequest) returns (ListAccessSubjectsResponse);
+  rpc SearchAccessSubjects (SearchAccessSubjectsRequest) returns (SearchAccessSubjectsResponse);
+  rpc GetAccessSubject (GetAccessSubjectRequest) returns (GetAccessSubjectResponse);
+  rpc UpdateAccessSubjectGroups (UpdateAccessSubjectGroupsRequest) returns (UpdateAccessSubjectGroupsResponse);
+  rpc UpdateAccessSubjectPersonalData (UpdateAccessSubjectPersonalDataRequest) returns (UpdateAccessSubjectPersonalDataResponse);
+  rpc CreateOrganizationInvite (CreateOrganizationInviteRequest) returns (CreateOrganizationInviteResponse);
+  rpc RevokeOrganizationInvite (RevokeOrganizationInviteRequest) returns (RevokeOrganizationInviteResponse);
+}
+
+service AccessSubjectGrantService {
+  rpc SetPermissions (SetAccessSubjectPermissionsRequest) returns (SetAccessSubjectPermissionsResponse);
+}
+
+service OrganizationChangesService {
+  rpc GetChanges (GetOrganizationChangesRequest) returns (GetOrganizationChangesResponse);
+  rpc ListOrganizationChangesVersions (ListOrganizationChangesVersionsRequest) returns (ListOrganizationChangesVersionsResponse);
+}
+
+message CreateAccessSubjectRequest {
+  string organization_id = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string middle_name = 4;
+  string phone_number = 5;
+  Date date_of_birth = 6;
+}
+
+message CreateAccessSubjectResponse {
+  AccessSubjectSummary access_subject = 1;
+}
+
+message ListAccessSubjectsRequest {
+  string organization_id = 1;
+  int32 page_number = 2;
+  int32 page_size = 3;
+  AccessSubjectFilter filter = 4;
+}
+
+message AccessSubjectFilter {
+  string subject_group_id = 1;
+}
+
+message ListAccessSubjectsResponse {
+  repeated AccessSubjectSummary access_subjects = 1;
+  int32 page_number = 2;
+  int32 page_size = 3;
+  int32 total_count = 4;
+}
+
+message SearchAccessSubjectsRequest {
+  string organization_id = 1;
+  string search_query = 2;
+  int32 limit = 3;
+}
+
+message SearchAccessSubjectsResponse {
+  repeated AccessSubjectSearchResult access_subjects = 1;
+}
+
+message AccessSubjectSearchResult {
+  string id = 1;
+  string display_name = 2;
+}
+
+message GetAccessSubjectRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+}
+
+message GetAccessSubjectResponse {
+  AccessSubject access_subject = 1;
+  AccessSubjectActiveInvite active_invite = 2;
+  bool can_view_grants = 3;
+  bool has_grants = 4;
+  repeated AccessSubjectGrantPermissionState grant_permissions = 5;
+  repeated AccessSubjectGroupSummary groups = 6;
+}
+
+message AccessSubjectSummary {
+  string id = 1;
+  string person_record_id = 2;
+  bool is_user_linked = 3;
+  AccessSubjectLifecycleStatus status = 4;
+  repeated AccessSubjectGroupSummary groups_preview = 5;
+  int32 groups_count = 6;
+}
+
+message AccessSubject {
+  string id = 1;
+  string short_name = 2;
+  string masked_phone_number = 3;
+  bool is_user_linked = 4;
+  AccessSubjectLifecycleStatus status = 5;
+}
+
+message AccessSubjectActiveInvite {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+message AccessSubjectGroupSummary {
+  string id = 1;
+  string display_name = 2;
+}
+
+message AccessSubjectGrantPermissionState {
+  string key = 1;
+  repeated string depends_on_keys = 2;
+  bool is_granted = 3;
+  bool is_baseline = 4;
+}
+
+message SetAccessSubjectPermissionsRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+  repeated string permission_keys = 3;
+}
+
+message SetAccessSubjectPermissionsResponse {
+}
+
+enum AccessSubjectLifecycleStatus {
+  ACCESS_SUBJECT_LIFECYCLE_STATUS_UNSPECIFIED = 0;
+  ACCESS_SUBJECT_LIFECYCLE_STATUS_ACTIVE = 1;
+  ACCESS_SUBJECT_LIFECYCLE_STATUS_DISABLED = 2;
+  ACCESS_SUBJECT_LIFECYCLE_STATUS_ARCHIVED = 3;
+}
+
+message GetOrganizationChangesRequest {
+  string organization_id = 1;
+  int64 from_version = 2;
+}
+
+message GetOrganizationChangesResponse {
+  int64 current_version = 1;
+  int32 changed_entity_count = 3;
+  repeated AccessSubjectChange access_subjects = 4;
+  repeated OrganizationChange organizations = 5;
+  repeated SubjectGroupChange subject_groups = 6;
+  repeated SubjectGroupMembershipChange subject_group_memberships = 7;
+  repeated AccessPointChange access_points = 8;
+  repeated AccessRuleChange access_rules = 9;
+  repeated ControllerPortChange controller_ports = 10;
+}
+
+message ListOrganizationChangesVersionsRequest {}
+
+message ListOrganizationChangesVersionsResponse {
+  repeated OrganizationChangesVersionSummary versions = 1;
+}
+
+message OrganizationChangesVersionSummary {
+  string organization_id = 1;
+  int64 current_version = 2;
+}
+
+message AccessSubjectChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string organization_id = 3;
+  string linked_user_id = 4;
+  AccessSubjectLifecycleStatus status = 5;
+}
+
+message OrganizationChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  OrganizationLifecycleStatus status = 3;
+}
+
+message SubjectGroupChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string organization_id = 3;
+  string tree_path = 4;
+}
+
+message SubjectGroupMembershipChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string organization_id = 3;
+  string subject_group_id = 4;
+  string access_subject_id = 5;
+}
+
+message AccessPointChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string organization_id = 3;
+  AccessPointLifecycleStatus status = 4;
+}
+
+message ControllerPortChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string organization_id = 3;
+  string access_point_id = 4;
+}
+
+message AccessRuleChange {
+  ChangeOperation operation = 1;
+  string id = 2;
+  string access_point_id = 3;
+  AccessRuleEffect effect = 4;
+  uint32 priority = 5;
+  AccessRuleLifecycleStatus status = 6;
+  repeated string subject_target_ids = 7;
+  repeated string group_target_ids = 8;
+}
+
+enum ChangeOperation {
+  CHANGE_OPERATION_UNSPECIFIED = 0;
+  CHANGE_OPERATION_CREATE_OR_UPDATE = 1;
+  reserved 2;
+  CHANGE_OPERATION_DELETE = 3;
+}
+
+message UpdateAccessSubjectGroupsRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+  reserved 3 to 7;
+  repeated string subject_group_ids = 8;
+}
+
+message UpdateAccessSubjectGroupsResponse {}
+
+message UpdateAccessSubjectPersonalDataRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+  string first_name = 3;
+  string last_name = 4;
+  string middle_name = 5;
+  string phone_number = 6;
+  Date date_of_birth = 7;
+}
+
+message UpdateAccessSubjectPersonalDataResponse {}
+
+message CreateOrganizationInviteRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+}
+
+message CreateOrganizationInviteResponse {
+  string invite_token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message RevokeOrganizationInviteRequest {
+  string organization_id = 1;
+  string access_subject_id = 2;
+}
+
+message RevokeOrganizationInviteResponse {}
+
+// ─── Subject Groups ────────────────────────────────────────────────────────
+
+service SubjectGroupService {
+  rpc GetSubjectGroupTree (GetSubjectGroupTreeRequest) returns (GetSubjectGroupTreeResponse);
+  rpc SearchSubjectGroups (SearchSubjectGroupsRequest) returns (SearchSubjectGroupsResponse);
+  rpc CreateSubjectGroup (CreateSubjectGroupRequest) returns (CreateSubjectGroupResponse);
+  rpc UpdateSubjectGroup (UpdateSubjectGroupRequest) returns (UpdateSubjectGroupResponse);
+  rpc DeleteSubjectGroup (DeleteSubjectGroupRequest) returns (DeleteSubjectGroupResponse);
+}
+
+message GetSubjectGroupTreeRequest {
+  string organization_id = 1;
+}
+
+message GetSubjectGroupTreeResponse {
+  repeated SubjectGroupSummary subject_groups = 1;
+}
+
+message SearchSubjectGroupsRequest {
+  string organization_id = 1;
+  string search_query = 2;
+  int32 limit = 3;
+}
+
+message SearchSubjectGroupsResponse {
+  repeated SubjectGroupSummary subject_groups = 1;
+}
+
+message SubjectGroupSummary {
+  string id = 1;
+  string display_name = 2;
+  string parent_group_id = 3;
+}
+
+message CreateSubjectGroupRequest {
+  string organization_id = 1;
+  string display_name = 2;
+  string parent_group_id = 3;
+}
+
+message CreateSubjectGroupResponse {
+  SubjectGroupSummary subject_group = 1;
+}
+
+message UpdateSubjectGroupRequest {
+  string organization_id = 1;
+  string subject_group_id = 2;
+  string display_name = 3;
+}
+
+message UpdateSubjectGroupResponse {
+  SubjectGroupSummary subject_group = 1;
+}
+
+message DeleteSubjectGroupRequest {
+  string organization_id = 1;
+  string subject_group_id = 2;
+}
+
+message DeleteSubjectGroupResponse {}
+
+// ─── Locations ──────────────────────────────────────────────────────────────
+
+service LocationService {
+  rpc GetLocationTree (GetLocationTreeRequest) returns (GetLocationTreeResponse);
+  rpc CreateLocation (CreateLocationRequest) returns (CreateLocationResponse);
+  rpc UpdateLocation (UpdateLocationRequest) returns (UpdateLocationResponse);
+  rpc DeleteLocation (DeleteLocationRequest) returns (DeleteLocationResponse);
+}
+
+message GetLocationTreeRequest {
+  string organization_id = 1;
+}
+
+message GetLocationTreeResponse {
+  repeated LocationSummary locations = 1;
+}
+
+message LocationSummary {
+  string id = 1;
+  string display_name = 2;
+  string parent_location_id = 3;
+}
+
+message CreateLocationRequest {
+  string organization_id = 1;
+  string display_name = 2;
+  string parent_location_id = 3;
+}
+
+message CreateLocationResponse {
+  LocationSummary location = 1;
+}
+
+message UpdateLocationRequest {
+  string organization_id = 1;
+  string location_id = 2;
+  string display_name = 3;
+}
+
+message UpdateLocationResponse {
+  LocationSummary location = 1;
+}
+
+message DeleteLocationRequest {
+  string organization_id = 1;
+  string location_id = 2;
+}
+
+message DeleteLocationResponse {}
+
+// ─── AccessPoints ──────────────────────────────────────────────────────────
+
+service AccessPointService {
+  rpc ListAccessPoints (ListAccessPointsRequest) returns (ListAccessPointsResponse);
+  rpc SearchAccessPoints (SearchAccessPointsRequest) returns (SearchAccessPointsResponse);
+  rpc GetAccessPoint (GetAccessPointRequest) returns (GetAccessPointResponse);
+  rpc CreateAccessPoint (CreateAccessPointRequest) returns (CreateAccessPointResponse);
+  rpc UpdateAccessPoint (UpdateAccessPointRequest) returns (UpdateAccessPointResponse);
+  rpc DeleteAccessPoint (DeleteAccessPointRequest) returns (DeleteAccessPointResponse);
+}
+
+message ListAccessPointsRequest {
+  string organization_id = 1;
+  AccessPointFilter filter = 2;
+  int32 page_number = 3;
+  int32 page_size = 4;
+}
+
+message AccessPointFilter {
+  string location_id = 1;
+}
+
+message ListAccessPointsResponse {
+  repeated AccessPointSummary access_points = 1;
+  int32 page_number = 2;
+  int32 page_size = 3;
+  int32 total_count = 4;
+}
+
+message SearchAccessPointsRequest {
+  string organization_id = 1;
+  string search_query = 2;
+  int32 limit = 3;
+}
+
+message SearchAccessPointsResponse {
+  repeated AccessPointSummary access_points = 1;
+}
+
+message AccessPointSummary {
+  string id = 1;
+  string location_id = 2;
+  string display_name = 3;
+  AccessPointLifecycleStatus status = 4;
+  string location_display_name = 5;
+  int32 access_rules_count = 6;
+}
+
+enum AccessPointLifecycleStatus {
+  ACCESS_POINT_LIFECYCLE_STATUS_UNSPECIFIED = 0;
+  ACCESS_POINT_LIFECYCLE_STATUS_INCOMPLETE = 1;
+  ACCESS_POINT_LIFECYCLE_STATUS_ACTIVE = 2;
+  ACCESS_POINT_LIFECYCLE_STATUS_LOCKDOWN = 3;
+  ACCESS_POINT_LIFECYCLE_STATUS_EXIT_ONLY = 4;
+}
+
+message GetAccessPointRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+}
+
+message GetAccessPointResponse {
+  AccessPoint access_point = 1;
+}
+
+message AccessPoint {
+  string id = 1;
+  string location_id = 2;
+  string display_name = 3;
+  AccessPointLifecycleStatus status = 4;
+  string location_display_name = 5;
+  int32 access_rules_count = 6;
+  repeated AccessRulePreview access_rules = 7;
+}
+
+message AccessRulePreview {
+  string id = 1;
+  string display_name = 2;
+  AccessRuleLifecycleStatus status = 3;
+}
+
+enum AccessRuleLifecycleStatus {
+  ACCESS_RULE_LIFECYCLE_STATUS_UNSPECIFIED = 0;
+  ACCESS_RULE_LIFECYCLE_STATUS_ACTIVE = 1;
+  ACCESS_RULE_LIFECYCLE_STATUS_DISABLED = 2;
+}
+
+message CreateAccessPointRequest {
+  string organization_id = 1;
+  string location_id = 2;
+  string display_name = 3;
+}
+
+message CreateAccessPointResponse {
+  AccessPointSummary access_point = 1;
+}
+
+message UpdateAccessPointRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+  string display_name = 3;
+}
+
+message UpdateAccessPointResponse {
+  AccessPointSummary access_point = 1;
+}
+
+message DeleteAccessPointRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+}
+
+message DeleteAccessPointResponse {}
+
+// ─── Controllers ───────────────────────────────────────────────────────────
+
+service ControllerService {
+  rpc ListControllers (ListControllersRequest) returns (ListControllersResponse);
+  rpc GetController (GetControllerRequest) returns (GetControllerResponse);
+  rpc BindController (BindControllerRequest) returns (BindControllerResponse);
+  rpc BindControllerPort (BindControllerPortRequest) returns (BindControllerPortResponse);
+  rpc UnbindControllerPort (UnbindControllerPortRequest) returns (UnbindControllerPortResponse);
+}
+
+message ListControllersRequest {
+  string organization_id = 1;
+  ControllerFilter filter = 2;
+  int32 page_number = 3;
+  int32 page_size = 4;
+}
+
+message ControllerFilter {
+  string access_point_id = 1;
+}
+
+message ListControllersResponse {
+  repeated string controller_ids = 1;
+  int32 page_number = 2;
+  int32 page_size = 3;
+  int32 total_count = 4;
+  repeated ControllerSummary controllers = 5;
+}
+
+message ControllerSummary {
+  string controller_id = 1;
+  int32 bound_access_points_count = 2;
+}
+
+message GetControllerRequest {
+  string organization_id = 1;
+  string controller_id = 2;
+}
+
+message GetControllerResponse {
+  ControllerDetails controller = 1;
+}
+
+message ControllerDetails {
+  string controller_id = 1;
+  repeated ControllerPortSummary ports = 2;
+}
+
+message ControllerPortSummary {
+  string id = 1;
+  uint32 port_number = 2;
+  string access_point_id = 3;
+  string access_point_display_name = 4;
+}
+
+message BindControllerRequest {
+  string organization_id = 1;
+  string claim_token = 2;
+}
+
+message BindControllerResponse {
+  string controller_id = 1;
+}
+
+message BindControllerPortRequest {
+  string organization_id = 1;
+  string controller_port_id = 2;
+  string access_point_id = 3;
+}
+
+message BindControllerPortResponse {
+}
+
+message UnbindControllerPortRequest {
+  string organization_id = 1;
+  string controller_port_id = 2;
+}
+
+message UnbindControllerPortResponse {
+}
+
+// ─── AccessRules ───────────────────────────────────────────────────────────
+
+service AccessRuleService {
+  rpc GetAccessRule (GetAccessRuleRequest) returns (GetAccessRuleResponse);
+  rpc CreateAccessRule (CreateAccessRuleRequest) returns (CreateAccessRuleResponse);
+  rpc UpdateAccessRule (UpdateAccessRuleRequest) returns (UpdateAccessRuleResponse);
+  rpc DeleteAccessRule (DeleteAccessRuleRequest) returns (DeleteAccessRuleResponse);
+}
+
+message GetAccessRuleRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+  string access_rule_id = 3;
+}
+
+message GetAccessRuleResponse {
+  AccessRule access_rule = 1;
+}
+
+message AccessRule {
+  string id = 1;
+  string display_name = 2;
+  AccessRuleEffect effect = 3;
+  AccessRuleLifecycleStatus status = 4;
+  repeated string access_subject_ids = 5;
+  repeated string subject_group_ids = 6;
+}
+
+message CreateAccessRuleRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+  string display_name = 3;
+  AccessRuleEffect effect = 4;
+  repeated string access_subject_ids = 5;
+  repeated string subject_group_ids = 6;
+}
+
+message CreateAccessRuleResponse {
+  AccessRulePreview access_rule = 1;
+}
+
+message UpdateAccessRuleRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+  string access_rule_id = 3;
+  string display_name = 4;
+  AccessRuleEffect effect = 5;
+  repeated string access_subject_ids = 6;
+  repeated string subject_group_ids = 7;
+}
+
+message UpdateAccessRuleResponse {
+  AccessRulePreview access_rule = 1;
+}
+
+message DeleteAccessRuleRequest {
+  string organization_id = 1;
+  string access_point_id = 2;
+  string access_rule_id = 3;
+}
+
+message DeleteAccessRuleResponse {}
+
+enum AccessRuleEffect {
+  ACCESS_RULE_EFFECT_UNSPECIFIED = 0;
+  ACCESS_RULE_EFFECT_DENY = 1;
+  ACCESS_RULE_EFFECT_ALLOW = 2;
+}
+
+// ─── Persons ────────────────────────────────────────────────────────────────
+
+service PersonService {
+  rpc ListMaskedPersons (ListMaskedPersonsRequest) returns (ListMaskedPersonsResponse);
+  rpc GetPerson (GetPersonRequest) returns (GetPersonResponse);
+}
+
+message ListMaskedPersonsRequest {
+  string organization_id = 1;
+  repeated string person_ids = 2;
+}
+
+message ListMaskedPersonsResponse {
+  repeated MaskedPersonSummary persons = 1;
+}
+
+message MaskedPersonSummary {
+  string person_id = 1;
+  string last_name = 2;
+  string initials = 3;
+  string masked_phone_number = 4;
+}
+
+message GetPersonRequest {
+  string organization_id = 1;
+  string person_id = 2;
+}
+
+message GetPersonResponse {
+  string person_id = 1;
+  string full_name = 2;
+  string phone_number = 3;
+  Date date_of_birth = 4;
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────
+service UserService {
+  rpc ListUserOrganizations (ListUserOrganizationsRequest) returns (ListUserOrganizationsResponse);
+  rpc GetOrganizationPermissions (GetOrganizationPermissionsRequest) returns (GetOrganizationPermissionsResponse);
+  rpc GetOrganizationInvitePreview (GetOrganizationInvitePreviewRequest) returns (GetOrganizationInvitePreviewResponse);
+  rpc ClaimOrganizationInvite (ClaimOrganizationInviteRequest) returns (ClaimOrganizationInviteResponse);
+}
+
+message ListUserOrganizationsRequest {}
+
+message ListUserOrganizationsResponse {
+  repeated UserAccessibleOrganization organizations = 1;
+}
+
+message GetOrganizationPermissionsRequest {
+  string slug = 1;
+}
+
+message GetOrganizationPermissionsResponse {
+  string organization_id = 1;
+  repeated string permission_keys = 2;
+}
+
+message UserAccessibleOrganization {
+  string organization_id = 1;
+  string organization_name = 2;
+  UserOrganizationAccessStatus access_status = 3;
+  google.protobuf.Timestamp access_issued_at = 4;
+}
+
+enum UserOrganizationAccessStatus {
+  USER_ORGANIZATION_ACCESS_STATUS_ACTIVE = 0;
+  USER_ORGANIZATION_ACCESS_STATUS_SUSPENDED = 1;
+}
+
+message GetOrganizationInvitePreviewRequest {
+  string invite_token = 1;
+}
+
+message GetOrganizationInvitePreviewResponse {
+  string organization_id = 1;
+  string organization_name = 2;
+}
+
+
+message ClaimOrganizationInviteRequest {
+  string invite_token = 1;
+}
+
+message ClaimOrganizationInviteResponse {}

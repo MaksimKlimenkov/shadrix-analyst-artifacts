@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "AccessControl.Grpc";
+
+package access_control;
+
+service AccessAuthorizationService {
+  rpc AuthorizeAccess (AuthorizeAccessRequest) returns (AuthorizeAccessResponse);
+}
+
+enum AccessDirection {
+  ACCESS_DIRECTION_UNSPECIFIED = 0;
+  ACCESS_DIRECTION_IN = 1;
+  ACCESS_DIRECTION_OUT = 2;
+}
+
+message AuthorizeAccessRequest {
+  string controller_port_id = 1;
+  google.protobuf.Timestamp requested_at = 2;
+  AccessDirection access_direction = 3;
+}
+
+message AuthorizeAccessResponse {
+  bool allowed = 1;
+  string reason = 2;
+  google.protobuf.Timestamp decided_at = 3;
+}

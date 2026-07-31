@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "common.proto";
+
+option csharp_namespace = "Identity.Grpc";
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+service AuthService {
+  rpc AuthorizePhoneNumber (AuthorizePhoneNumberRequest) returns (AuthorizePhoneNumberResponse);
+  rpc GetAvailableReauthMethods (GetAvailableReauthMethodsRequest) returns (GetAvailableReauthMethodsResponse);
+  rpc InitPinLogin (InitPinLoginRequest) returns (InitPinLoginResponse);
+}
+
+
+enum ReauthMethod {
+  PIN = 0;
+  BIOMETRICS = 1;
+}
+
+message GetAvailableReauthMethodsRequest {
+  string user_id = 1;
+  string device_session_id = 2;
+}
+
+message GetAvailableReauthMethodsResponse {
+  repeated ReauthMethod AvailableMethods = 1;
+}
+
+enum CodeChallengeMethod {
+  S256 = 0;
+}
+
+enum PhoneNumberProvider {
+  TELEGRAM = 0;
+}
+
+message AuthorizePhoneNumberRequest {
+  string client_id = 1;
+  PhoneNumberProvider provider = 2;
+  string code_challenge = 3;
+  CodeChallengeMethod code_challenge_method = 4;
+  string redirect_uri = 5;
+}
+
+message AuthorizePhoneNumberResponse {
+  string redirect_url = 1;
+  google.protobuf.Duration expires_in = 2;
+}
+
+message InitPinLoginRequest {
+  string server_id = 1;
+  string client_instance_id = 2;
+  string credential_request = 3;
+}
+message InitPinLoginResponse {
+  string nonce = 1;
+  string credential_response = 2;
+}
+
+// ─── Profile ────────────────────────────────────────────────────────────────────
+
+service ProfileService {
+  rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
+  rpc UpdateProfile (UpdateProfileRequest) returns (UpdateProfileResponse);
+}
+
+message GetProfileRequest {}
+
+message GetProfileResponse {
+  string first_name = 1;
+  string last_name = 2;
+  string middle_name = 3;
+  Date date_of_birth = 4;
+  string phone_number = 5;
+}
+
+message UpdateProfileRequest {
+  string first_name = 1;
+  string last_name = 2;
+  string middle_name = 3;
+  Date dateOfBirth = 4;
+}
+
+message UpdateProfileResponse {}
+
+// ─── Device Session ────────────────────────────────────────────────────────────────────
+
+service DeviceSessionService {
+  rpc CreateDeviceSession (CreateDeviceSessionRequest) returns (CreateDeviceSessionResponse);
+  rpc LogoutDeviceSession (LogoutDeviceSessionRequest) returns (LogoutDeviceSessionResponse);
+}
+
+message CreateDeviceSessionRequest {
+  string device_name = 1;
+  string device_verifier = 2;
+  string client_instance_id = 3;
+
+  oneof client_info {
+    MobileSessionInfo mobile = 4;
+    WebSessionInfo web = 5;
+  }
+}
+
+message MobileSessionInfo {
+  string platform = 1;
+  string app_version = 2;
+}
+
+message WebSessionInfo {
+  string user_agent = 1;
+}
+
+message CreateDeviceSessionResponse {}
+
+message LogoutDeviceSessionRequest {}
+
+message LogoutDeviceSessionResponse {}
+
+// ─── Credentials ────────────────────────────────────────────────────────────────────
+
+service CredentialsService {
+  rpc InitPinRegistration (InitPinRegistrationRequest) returns (InitPinRegistrationResponse);
+  rpc CommitPin (CommitPinRequest) returns (CommitPinResponse);
+  rpc VerifyPin (VerifyPinRequest) returns (VerifyPinResponse);
+  rpc ConfirmPin (ConfirmPinRequest) returns (ConfirmPinResponse);
+}
+
+message InitPinRegistrationRequest {
+  string registration_request = 2;
+}
+message InitPinRegistrationResponse {
+  string registration_response = 1;
+}
+
+message CommitPinRequest {
+  string registration_record = 2;
+}
+message CommitPinResponse {}
+
+message VerifyPinRequest {
+  string serverId = 1;
+  string credential_request = 2;
+}
+
+message VerifyPinResponse {
+  string nonce = 1;
+  string credential_response = 2;
+}
+
+message ConfirmPinRequest {
+  string pin_assertion = 2;
+}
+
+message ConfirmPinResponse {}

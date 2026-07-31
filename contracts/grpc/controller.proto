@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "ControllerRegistry";
+
+package controller;
+
+service RegistrationService {
+  rpc RegisterController (RegisterControllerRequest) returns (RegisterControllerResponse);
+}
+
+service EnrollmentService {
+  rpc EnrollController (EnrollControllerRequest) returns (EnrollControllerResponse);
+}
+
+message RegisterControllerRequest {}
+
+message RegisterControllerResponse {
+  string controller_id = 1;
+  string serial_number = 2;
+  string bt_name = 3;
+  string claim_token = 4;
+}
+
+message EnrollControllerRequest {
+  string controller_id = 1;
+  string csr_pem = 2;
+}
+
+message EnrollControllerResponse {
+  string cert_pem = 1;
+}
+
+service ControllerService {
+  rpc GetControllers (GetControllersRequest) returns (GetControllersResponse);
+}
+
+service ControllerBindingCapabilityService {
+  rpc CheckControllerBindingCapability (CheckControllerBindingCapabilityRequest) returns (CheckControllerBindingCapabilityResponse);
+}
+
+message ControllerSummary {
+  string controller_id = 1;
+  string serial_number = 2;
+  ControllerActivityStatus activity_status = 3;
+  google.protobuf.Timestamp last_activity = 4;
+  string bt_name = 5;
+}
+
+enum ControllerActivityStatus {
+  CONTROLLER_ACTIVITY_STATUS_ONLINE = 0;
+  CONTROLLER_ACTIVITY_STATUS_OFFLINE = 1;
+}
+
+message GetControllersRequest {
+  repeated string controller_ids = 1;
+}
+
+message GetControllersResponse {
+  repeated ControllerSummary controller = 1;
+}
+
+message CheckControllerBindingCapabilityRequest {
+  string claim_token = 1;
+}
+
+message CheckControllerBindingCapabilityResponse {
+  ControllerBindingCapability capability = 1;
+  string controller_id = 2;
+  uint32 ports_count = 3;
+}
+
+enum ControllerBindingCapability {
+  CONTROLLER_BINDING_CAPABILITY_NOT_FOUND = 0;
+  CONTROLLER_BINDING_CAPABILITY_AVAILABLE = 1;
+  CONTROLLER_BINDING_CAPABILITY_DISABLED = 2;
+}
